@@ -1,0 +1,10 @@
+:root {
+  /* Color Palette - Defined from MASTER */
+  --color-primary: #0891b2;
+  --color-secondary: #22d3ee;
+  --color-cta: #22c55e;
+  --color-bg: #f0fdfa;
+  --color-text: #134e4a;
+
+  /* Typography Variables will be injected by Next.js Font */
+}
