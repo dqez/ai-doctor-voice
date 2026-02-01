@@ -1,3 +1,11 @@
+import { api } from "@/services/api";
+
+/** Maximum retry attempts for API calls */
+const MAX_RETRIES = 3;
+
+/** Base delay for exponential backoff (ms) */
+const BASE_DELAY = 1000;
+
 export interface SoapData {
   subjective: string;
   objective: string;
@@ -8,51 +16,209 @@ export interface SoapData {
 
 export interface AnalysisStatus {
   lastUpdated: string;
-  status: "draft" | "finalized";
+  status: "draft" | "finalized" | "processing" | "error";
 }
 
-// Mock Data
-const MOCK_SOAP: SoapData = {
-  subjective:
-    "Patient presented with a 3-day history of sore throat and mild fever (38°C). Reports dry cough, worse at night. No difficulty breathing. Denies recent travel or contact with sick individuals.",
-  objective:
-    "Temp 38.0°C, BP 120/80, HR 88, RR 18, SpO2 98% room air. Pharynx erythematous with no exudates. Lungs clear to auscultation bilaterally. No lymphadenopathy.",
-  assessment: "1. Acute Pharyngitis - likely viral\n2. Fever",
-  plan: "- Supportive care: Rest, hydration\n- Acetaminophen 500mg q6h prn fever/pain\n- Salt water gargles\n- Return to clinic if symptoms worsen or fever persists > 3 days",
-  icd10: [
-    { code: "J02.9", description: "Acute pharyngitis, unspecified" },
-    { code: "R50.9", description: "Fever, unspecified" },
-  ],
-};
+export interface AnalysisResult {
+  soap: SoapData;
+  status: AnalysisStatus;
+}
+
+export class AnalysisServiceError extends Error {
+  code: string;
+  status?: number;
+
+  constructor(message: string, code: string, status?: number) {
+    super(message);
+    this.name = "AnalysisServiceError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+/**
+ * Sleep utility for retry delays
+ */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Retry a function with exponential backoff
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = MAX_RETRIES,
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      if (attempt === maxRetries) {
+        throw lastError;
+      }
+
+      // Exponential backoff: 2s, 4s, 8s
+      const delay = Math.pow(2, attempt) * BASE_DELAY;
+      console.log(
+        `[AnalysisService] Attempt ${attempt} failed, retrying in ${delay}ms...`,
+      );
+      await sleep(delay);
+    }
+  }
+
+  throw lastError;
+}
 
 export const analysisService = {
-  getAiDraft: async (
-    sessionId: string,
-  ): Promise<{ soap: SoapData; status: AnalysisStatus }> => {
-    // Simulate API delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
+  /**
+   * Get AI draft or current analysis for a session
+   */
+  getAiDraft: async (sessionId: string): Promise<AnalysisResult> => {
+    return retryWithBackoff(async () => {
+      const res = await api.get<{
+        id?: string;
+        subjective?: string;
+        objective?: string;
+        assessment?: string;
+        plan?: string;
+        icdCodes?: { code: string; description: string }[];
+        icd10?: { code: string; description: string }[];
+        status?: string;
+        updatedAt?: string;
+      }>(`/api/sessions/${sessionId}/analysis`);
 
-    return {
-      soap: MOCK_SOAP,
-      status: {
-        lastUpdated: new Date().toISOString(),
-        status: "draft",
-      },
-    };
+      return {
+        soap: {
+          subjective: res.subjective || "",
+          objective: res.objective || "",
+          assessment: res.assessment || "",
+          plan: res.plan || "",
+          icd10: res.icdCodes || res.icd10 || [],
+        },
+        status: {
+          lastUpdated: res.updatedAt || new Date().toISOString(),
+          status: mapBackendStatus(res.status),
+        },
+      };
+    });
   },
 
-  triggerFinalAnalysis: async (sessionId: string): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    console.log(`[Analysis] Triggered final analysis for session ${sessionId}`);
+  /**
+   * Trigger AI analysis on finalized transcript
+   * This calls the Gemini API via backend
+   */
+  triggerFinalAnalysis: async (sessionId: string): Promise<AnalysisResult> => {
+    return retryWithBackoff(async () => {
+      const res = await api.post<{
+        id?: string;
+        subjective?: string;
+        objective?: string;
+        assessment?: string;
+        plan?: string;
+        icdCodes?: { code: string; description: string }[];
+        icd10?: { code: string; description: string }[];
+        status?: string;
+        updatedAt?: string;
+      }>(`/api/sessions/${sessionId}/analysis/trigger`, {});
+
+      return {
+        soap: {
+          subjective: res.subjective || "",
+          objective: res.objective || "",
+          assessment: res.assessment || "",
+          plan: res.plan || "",
+          icd10: res.icdCodes || res.icd10 || [],
+        },
+        status: {
+          lastUpdated: res.updatedAt || new Date().toISOString(),
+          status: mapBackendStatus(res.status),
+        },
+      };
+    });
   },
 
+  /**
+   * Save draft SOAP data (doctor edits)
+   */
   saveDraft: async (sessionId: string, data: SoapData): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    console.log(`[Analysis] Saved draft for session ${sessionId}`, data);
+    return retryWithBackoff(async () => {
+      await api.put(`/api/sessions/${sessionId}/analysis/draft`, {
+        subjective: data.subjective,
+        objective: data.objective,
+        assessment: data.assessment,
+        plan: data.plan,
+        icdCodes: data.icd10,
+      });
+    });
   },
 
+  /**
+   * Proceed to review step (after saving final analysis)
+   */
   proceedToReview: async (sessionId: string): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
     console.log(`[Analysis] Proceeding to review for session ${sessionId}`);
+    // Navigation is handled by the page component
+  },
+
+  /**
+   * Create comparison record for review
+   */
+  createComparison: async (
+    sessionId: string,
+    data: {
+      aiResults: SoapData;
+      doctorResults: SoapData;
+      matchScore: number;
+    },
+  ): Promise<{ id: string; matchScore: number }> => {
+    return retryWithBackoff(async () => {
+      return await api.post(`/api/sessions/${sessionId}/review/compare`, {
+        aiResults: data.aiResults,
+        doctorResults: data.doctorResults,
+        matchScore: data.matchScore,
+      });
+    });
+  },
+
+  /**
+   * Get analysis status (for polling)
+   */
+  getAnalysisStatus: async (sessionId: string): Promise<AnalysisStatus> => {
+    return retryWithBackoff(async () => {
+      const res = await api.get<{
+        status?: string;
+        updatedAt?: string;
+      }>(`/api/sessions/${sessionId}/analysis/status`);
+
+      return {
+        lastUpdated: res.updatedAt || new Date().toISOString(),
+        status: mapBackendStatus(res.status),
+      };
+    });
   },
 };
+
+/**
+ * Map backend status to frontend status
+ */
+function mapBackendStatus(
+  status?: string,
+): "draft" | "finalized" | "processing" | "error" {
+  switch (status?.toUpperCase()) {
+    case "COMPLETED":
+    case "FINALIZED":
+      return "finalized";
+    case "PROCESSING":
+    case "IN_PROGRESS":
+      return "processing";
+    case "ERROR":
+    case "FAILED":
+      return "error";
+    case "DRAFT":
+    default:
+      return "draft";
+  }
+}

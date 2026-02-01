@@ -1,5 +1,7 @@
 import { Patient, CreatePatientInput } from "@/types/patient";
 import { DashboardStats, DashboardSession } from "@/types/dashboard";
+import { api } from "@/services/api";
+import { audioService } from "@/services/audioService";
 
 export interface TranscriptSegment {
   id: string;
@@ -9,7 +11,8 @@ export interface TranscriptSegment {
   confidence: number;
 }
 
-const MOCK_TRANSCRIPT: TranscriptSegment[] = [
+// MOCK_TRANSCRIPT kept as fallback for development/testing
+export const MOCK_TRANSCRIPT: TranscriptSegment[] = [
   {
     id: "1",
     speaker: "Doctor",
@@ -54,88 +57,103 @@ const MOCK_TRANSCRIPT: TranscriptSegment[] = [
   },
 ];
 
+/**
+ * Get transcript segments for a session
+ * Uses real API call, falls back to mock data in development
+ */
 export async function getTranscript(
   sessionId: string,
 ): Promise<TranscriptSegment[]> {
-  console.log(`[Mock] Fetching transcript for session ${sessionId}`);
-  // Simulate network delay
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  return [...MOCK_TRANSCRIPT];
+  try {
+    const segments = await audioService.getTranscript(sessionId);
+    return segments;
+  } catch (error) {
+    // In development, fall back to mock data if API not available
+    if (process.env.NODE_ENV === "development") {
+      console.warn(
+        `[getTranscript] API failed, using mock data for session ${sessionId}:`,
+        error,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return [...MOCK_TRANSCRIPT];
+    }
+    throw error;
+  }
 }
 
+/**
+ * Update a transcript segment
+ * Uses real API call
+ */
 export async function updateTranscriptSegment(
   sessionId: string,
   segmentId: string,
   text: string,
 ): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  console.log(
-    `[Mock] Updated segment ${segmentId} for session ${sessionId}: ${text}`,
-  );
+  try {
+    await audioService.updateSegment(sessionId, segmentId, text);
+  } catch (error) {
+    // In development, log and continue
+    if (process.env.NODE_ENV === "development") {
+      console.warn(
+        `[updateTranscriptSegment] API failed for session ${sessionId}, segment ${segmentId}:`,
+        error,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return;
+    }
+    throw error;
+  }
 }
 
+/**
+ * Finalize transcript (mark ready for AI analysis)
+ * Uses real API call
+ */
 export async function finalizeTranscript(sessionId: string): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  console.log(`[Mock] Finalized transcript for session ${sessionId}`);
+  try {
+    await audioService.finalizeTranscript(sessionId);
+  } catch (error) {
+    // In development, log and continue
+    if (process.env.NODE_ENV === "development") {
+      console.warn(
+        `[finalizeTranscript] API failed for session ${sessionId}:`,
+        error,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return;
+    }
+    throw error;
+  }
 }
 
-const MOCK_PATIENTS: Patient[] = [
-  {
-    id: "p1",
-    name: "Nguyen Van An",
-    dob: "1985-04-12",
-    gender: "Male",
-    phone: "0912345678",
-    lastVisit: "2023-10-15",
-  },
-  {
-    id: "p2",
-    name: "Tran Thi Binh",
-    dob: "1992-08-25",
-    gender: "Female",
-    phone: "0987654321",
-    lastVisit: "2024-01-05",
-  },
-  {
-    id: "p3",
-    name: "Le Hoang Nam",
-    dob: "1978-12-30",
-    gender: "Male",
-    phone: "0909090909",
-  },
-];
-
+// Replaced MOCK_PATIENTS with API calls
 export async function searchPatients(query: string): Promise<Patient[]> {
-  console.log(`[Mock] Searching patients with query: ${query}`);
-  await new Promise((resolve) => setTimeout(resolve, 600)); // Simulate delay
-
   if (!query) return [];
-
-  const lowerQuery = query.toLowerCase();
-  return MOCK_PATIENTS.filter(
-    (p) => p.name.toLowerCase().includes(lowerQuery) || p.phone.includes(query),
-  );
+  try {
+    const data = await api.get<Patient[]>(
+      `/api/patients?name=${encodeURIComponent(query)}`,
+    );
+    return data;
+  } catch (error) {
+    console.error("Failed to search patients:", error);
+    return [];
+  }
 }
 
 export async function createPatient(
   data: CreatePatientInput,
 ): Promise<Patient> {
-  console.log(`[Mock] Creating patient:`, data);
-  await new Promise((resolve) => setTimeout(resolve, 800));
-
-  const newPatient: Patient = {
-    id: `p${Date.now()}`,
-    ...data,
-    lastVisit: new Date().toISOString().split("T")[0],
-  };
-  MOCK_PATIENTS.push(newPatient); // In-memory update
-  return newPatient;
+  return await api.post<Patient>("/api/patients", data);
 }
 
 export async function startSession(patientId: string): Promise<string> {
-  console.log(`[Mock] Starting session for patient: ${patientId}`);
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  return `sess_${Date.now()}`;
+  const session = await api.post<{
+    id: string;
+    visitNumber: number;
+    patientId: string;
+  }>("/api/sessions", { patientId });
+  return session.id;
 }
 
 const MOCK_STATS: DashboardStats = {
