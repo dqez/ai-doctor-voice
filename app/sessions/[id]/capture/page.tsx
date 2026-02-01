@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState } from "react";
 import {
   Mic,
   Square,
@@ -62,31 +62,31 @@ export default function CapturePage() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const handleStartRecording = useCallback(async () => {
+  const handleStartRecording = async () => {
     setErrorMessage("");
     await startRecording();
-  }, [startRecording]);
+  };
 
-  const handleStopRecording = useCallback(() => {
+  const handleStopRecording = () => {
     stopRecording();
-  }, [stopRecording]);
+  };
 
-  const handlePauseRecording = useCallback(() => {
+  const handlePauseRecording = () => {
     pauseRecording();
-  }, [pauseRecording]);
+  };
 
-  const handleResumeRecording = useCallback(() => {
+  const handleResumeRecording = () => {
     resumeRecording();
-  }, [resumeRecording]);
+  };
 
-  const handleReset = useCallback(() => {
+  const handleReset = () => {
     reset();
     setUploadState("idle");
     setUploadProgress(null);
     setErrorMessage("");
-  }, [reset]);
+  };
 
-  const handleSaveAndContinue = useCallback(async () => {
+  const handleSaveAndContinue = async () => {
     if (!audioBlob) return;
 
     setUploadState("uploading");
@@ -116,11 +116,11 @@ export default function CapturePage() {
 
       setShowErrorToast(true);
     }
-  }, [audioBlob, sessionId, router]);
+  };
 
-  const handleRetry = useCallback(() => {
+  const handleRetry = () => {
     handleSaveAndContinue();
-  }, [handleSaveAndContinue]);
+  };
 
   // Check browser support
   if (!isSupported) {

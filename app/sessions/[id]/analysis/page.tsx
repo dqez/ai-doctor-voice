@@ -302,7 +302,7 @@ export default function AnalysisPage() {
           {/* Progress Bar */}
           <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
             <div
-              className="bg-gradient-to-r from-primary to-secondary h-full transition-all duration-300 ease-out"
+              className="bg-linear-to-r from-primary to-secondary h-full transition-all duration-300 ease-out"
               style={{ width: `${progress}%` }}
             />
           </div>

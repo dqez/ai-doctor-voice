@@ -1,14 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import {
-  Play,
-  Square,
-  RefreshCw,
-  CheckCircle,
-  Loader2,
-  Mic,
-} from "lucide-react";
+import { Square, RefreshCw, CheckCircle, Loader2, Mic } from "lucide-react";
 import { WaveformVisualizer } from "./WaveformVisualizer";
 import { cn } from "@/lib/utils";
 

@@ -11,11 +11,14 @@ export const WaveformVisualizer: React.FC<WaveformVisualizerProps> = ({
   className,
 }) => {
   // Generate a random set of bar heights for visual interest
-  const bars = Array.from({ length: 20 }, (_, i) => ({
-    id: i,
-    height: Math.max(20, Math.random() * 100),
-    delay: Math.random() * 0.5,
-  }));
+  // Generate a random set of bar heights for visual interest once on mount
+  const [bars] = React.useState(() =>
+    Array.from({ length: 20 }, (_, i) => ({
+      id: i,
+      height: Math.max(20, Math.random() * 100),
+      delay: Math.random() * 0.5,
+    })),
+  );
 
   return (
     <div

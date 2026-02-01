@@ -1,5 +1,5 @@
 import React from "react";
-import { DashboardSession, SessionStatus } from "../../types/dashboard";
+import { SessionStatus } from "../../types/dashboard";
 
 interface SessionStatusBadgeProps {
   status: SessionStatus;
